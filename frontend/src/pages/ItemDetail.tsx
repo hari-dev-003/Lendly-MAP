@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, MapPin, Calendar, Shield, MessageCircle, Heart,
-  Share2, ChevronLeft, ChevronRight, Star, Package, Clock
+  Share2, ChevronLeft, ChevronRight, Package, Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -74,6 +74,16 @@ const ItemDetail = () => {
 
   const totalPrice = item ? totalDays * item.price : 0;
 
+  const loadRazorpay = (): Promise<boolean> =>
+    new Promise((resolve) => {
+      if ((window as any).Razorpay) { resolve(true); return; }
+      const s = document.createElement("script");
+      s.src = "https://checkout.razorpay.com/v1/checkout.js";
+      s.onload = () => resolve(true);
+      s.onerror = () => resolve(false);
+      document.body.appendChild(s);
+    });
+
   const handleBookNow = async () => {
     if (!currentUser) { navigate("/login"); return; }
     if (!startDate || !endDate) { toast.error("Please select rental dates"); return; }
@@ -82,7 +92,8 @@ const ItemDetail = () => {
 
     setBookingLoading(true);
     try {
-      const res = await axios.post("http://localhost:3000/api/bookings", {
+      // 1. Create booking (payment_pending)
+      const bookingRes = await axios.post("http://localhost:3000/api/bookings", {
         itemId: item!._id,
         itemTitle: item!.title,
         itemImage: item!.image,
@@ -92,8 +103,52 @@ const ItemDetail = () => {
         endDate,
         pricePerDay: item!.price,
       });
-      toast.success("Booking confirmed!");
-      navigate(`/my-bookings`);
+      const bookingId = bookingRes.data.booking._id;
+
+      // 2. Create Razorpay order
+      const orderRes = await axios.post("http://localhost:3000/api/payments/create-order", {
+        bookingId,
+        amount: totalPrice,
+      });
+
+      const loaded = await loadRazorpay();
+      if (!loaded) { toast.error("Payment gateway failed to load"); return; }
+
+      // 3. Open Razorpay modal
+      const options = {
+        key: orderRes.data.keyId,
+        amount: orderRes.data.amount,
+        currency: orderRes.data.currency,
+        name: "Lendly",
+        description: `Booking: ${item!.title}`,
+        order_id: orderRes.data.orderId,
+        handler: async (response: any) => {
+          try {
+            // 4. Verify payment
+            await axios.post("http://localhost:3000/api/payments/verify", {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              bookingId,
+            });
+            toast.success("Payment successful! Booking confirmed.");
+            navigate("/my-bookings");
+          } catch {
+            toast.error("Payment verification failed");
+          }
+        },
+        prefill: { name: currentUser },
+        theme: { color: "#2563EB" },
+        modal: {
+          ondismiss: () => {
+            toast.info("Payment cancelled. Your booking is saved as pending.");
+            navigate("/my-bookings");
+          },
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Booking failed");
     } finally {
@@ -394,6 +449,8 @@ const ItemDetail = () => {
       {chatOpen && (
         <ChatWidget
           ownerName={item.owner}
+          currentUser={currentUser ?? ""}
+          itemId={item._id}
           itemTitle={item.title}
           onClose={() => setChatOpen(false)}
         />

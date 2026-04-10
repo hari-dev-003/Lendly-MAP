@@ -23,6 +23,8 @@ const bookingSchema = new mongoose.Schema({
     preHandoverPhotos: [{ type: String }],
     postHandoverPhotos: [{ type: String }],
     disputeReason: { type: String, default: '' },
+    paymentId:    { type: String, default: '' },
+    orderId:      { type: String, default: '' },
     createdAt: { type: Date, default: Date.now }
 });
 

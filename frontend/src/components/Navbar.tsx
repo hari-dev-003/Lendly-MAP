@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Menu, X, Bell, User, Package, LogOut, LayoutDashboard } from "lucide-react";
+import { Menu, X, Bell, User, Package, LogOut, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -99,6 +99,13 @@ const Navbar = () => {
                         className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors"
                       >
                         <Package className="h-4 w-4" /> My Bookings
+                      </Link>
+                      <Link
+                        to="/onboarding"
+                        onClick={() => setDropdownOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors"
+                      >
+                        <ShieldCheck className="h-4 w-4" /> Verify KYC
                       </Link>
                       <Link
                         to="/admin"
