@@ -1,57 +1,107 @@
+import 'dotenv/config';
 import express from 'express';
-import connection from './db/db.mjs';
-import { signup, login, updateProfile, getProfile } from './controllers/login.mjs';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import './db/db.mjs';
 import cors from 'cors';
+
+import { signup, login, updateProfile, getProfile } from './controllers/login.mjs';
 import { getusers } from './controllers/users.mjs';
 import { uploadImage } from './controllers/photoupload.mjs';
 import upload from './middleware/upload.mjs';
 import { getProducts, getProductById } from './controllers/productfetch.mjs';
-import { createBooking, getBookingsByUser, updateBookingStatus, uploadHandoverPhotos, getBookingById } from './controllers/booking.mjs';
-import { createReview, getItemReviews, getUserReviews } from './controllers/review.mjs';
+import { createBooking, getBookingsByUser, getAllBookings, updateBookingStatus, uploadHandoverPhotos, getBookingById } from './controllers/booking.mjs';
+import { createReview, getItemReviews, getUserReviews, getAllReviews } from './controllers/review.mjs';
+import { createOrder, verifyPayment } from './controllers/payment.mjs';
+import { submitKyc, getKycStatus, reviewKyc, getPendingKyc } from './controllers/kyc.mjs';
+import { getMessages } from './controllers/message.mjs';
+import Message from './schemas/message.schema.mjs';
 
 const app = express();
-app.use(express.json());
+const httpServer = createServer(app);
 
-app.use(cors({
-    origin: 'http://localhost:8080',
+const ALLOWED_ORIGINS = ['http://localhost:8080', 'http://localhost:8081'];
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) callback(null, true);
+        else callback(new Error('Not allowed by CORS'));
+    },
     credentials: true
-}));
+};
+
+const io = new Server(httpServer, { cors: corsOptions });
+
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.use(cors(corsOptions));
 
 const PORT = 3000;
 
-// Health
-app.get('/', (req, res) => {
-    res.send('Server is running');
+// ── Socket.io real-time chat ──────────────────────────────────────────────────
+io.on('connection', (socket) => {
+    socket.on('join_room', (room) => {
+        socket.join(room);
+    });
+
+    socket.on('send_message', async ({ room, sender, text }) => {
+        try {
+            const msg = await Message.create({ room, sender, text });
+            io.to(room).emit('receive_message', msg);
+        } catch (err) {
+            console.log('Chat error:', err.message);
+        }
+    });
+
+    socket.on('disconnect', () => {});
 });
 
-// Auth
+// ── Health ────────────────────────────────────────────────────────────────────
+app.get('/', (_req, res) => res.send('Server is running'));
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
 app.post('/api/signup', signup);
 app.post('/api/login', login);
 
-// Profile
+// ── Profile ───────────────────────────────────────────────────────────────────
 app.get('/api/profile/:username', getProfile);
 app.put('/api/profile', updateProfile);
 
-// Users
+// ── Users ─────────────────────────────────────────────────────────────────────
 app.get('/api/users', getusers);
 
-// Products
+// ── Products ──────────────────────────────────────────────────────────────────
 app.post('/api/upload', upload.single('image'), uploadImage);
 app.get('/api/products', getProducts);
 app.get('/api/products/:id', getProductById);
 
-// Bookings
+// ── Bookings ──────────────────────────────────────────────────────────────────
 app.post('/api/bookings', createBooking);
+app.get('/api/bookings', getAllBookings);
 app.get('/api/bookings/user/:username', getBookingsByUser);
 app.get('/api/bookings/:id', getBookingById);
 app.patch('/api/bookings/:id/status', updateBookingStatus);
 app.patch('/api/bookings/:id/photos', uploadHandoverPhotos);
 
-// Reviews
+// ── Reviews ───────────────────────────────────────────────────────────────────
 app.post('/api/reviews', createReview);
+app.get('/api/reviews', getAllReviews);
 app.get('/api/reviews/item/:itemId', getItemReviews);
 app.get('/api/reviews/user/:username', getUserReviews);
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+// ── Payments ──────────────────────────────────────────────────────────────────
+app.post('/api/payments/create-order', createOrder);
+app.post('/api/payments/verify', verifyPayment);
+
+// ── KYC ───────────────────────────────────────────────────────────────────────
+app.post('/api/kyc/submit', upload.fields([{ name: 'docFront', maxCount: 1 }, { name: 'docBack', maxCount: 1 }]), submitKyc);
+app.get('/api/kyc/status/:username', getKycStatus);
+app.post('/api/kyc/review', reviewKyc);
+app.get('/api/kyc/pending', getPendingKyc);
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+app.get('/api/messages/:room', getMessages);
+
+httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });

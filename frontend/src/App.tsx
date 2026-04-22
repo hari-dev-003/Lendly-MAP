@@ -15,6 +15,7 @@ import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import MyBookings from "./pages/MyBookings";
 import Handover from "./pages/Handover";
+import Onboarding from "./pages/Onboarding";
 
 const queryClient = new QueryClient();
 
@@ -23,7 +24,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           {/* Public */}
           <Route path="/" element={<Login />} />
@@ -39,6 +40,7 @@ const App = () => (
           <Route path="/my-bookings" element={<ProtectedRoute><MyBookings /></ProtectedRoute>} />
           <Route path="/handover/:bookingId" element={<ProtectedRoute><Handover /></ProtectedRoute>} />
           <Route path="/handover" element={<ProtectedRoute><Handover /></ProtectedRoute>} />
+          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
 
           {/* 404 */}

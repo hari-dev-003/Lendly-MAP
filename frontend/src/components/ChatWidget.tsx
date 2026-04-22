@@ -1,66 +1,69 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Send, MessageCircle } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Button } from "@/components/ui/button";
+import { X, Send } from "lucide-react";
+import { motion } from "framer-motion";
+import { io, Socket } from "socket.io-client";
 
 interface Message {
-  id: number;
-  from: "me" | "them";
+  _id?: string;
+  sender: string;
   text: string;
-  time: string;
+  createdAt: string;
 }
 
 interface ChatWidgetProps {
   ownerName: string;
+  currentUser: string;
+  itemId: string;
   itemTitle: string;
   onClose: () => void;
 }
 
-const now = () =>
-  new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+let socket: Socket | null = null;
 
-const ChatWidget = ({ ownerName, itemTitle, onClose }: ChatWidgetProps) => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      from: "them",
-      text: `Hi! I'm ${ownerName}. I saw you're interested in "${itemTitle}". Feel free to ask me anything!`,
-      time: now(),
-    },
-  ]);
+const ChatWidget = ({ ownerName, currentUser, itemId, itemTitle, onClose }: ChatWidgetProps) => {
+  const room = [...[currentUser, ownerName]].sort().join("_") + "_" + itemId;
+
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [connected, setConnected] = useState(false);
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    socket = io("http://localhost:3000", { transports: ["websocket"] });
+
+    socket.on("connect", () => {
+      setConnected(true);
+      socket!.emit("join_room", room);
+    });
+
+    socket.on("disconnect", () => setConnected(false));
+
+    socket.on("receive_message", (msg: Message) => {
+      setMessages((prev) => [...prev, msg]);
+      if (msg.sender !== currentUser) setTyping(false);
+    });
+
+    // Load history
+    fetch(`http://localhost:3000/api/messages/${encodeURIComponent(room)}`)
+      .then((r) => r.json())
+      .then((d) => setMessages(d.messages || []));
+
+    return () => {
+      socket?.disconnect();
+      socket = null;
+    };
+  }, [room]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  const mockReplies = [
-    "Yes, it's available on those dates!",
-    "Sure, you can pick it up from my place in the evening.",
-    "The item is in excellent condition, barely used.",
-    "Payment is handled through the platform — it's escrow protected.",
-    "Happy to arrange a quick inspection before handover.",
-  ];
-
   const send = () => {
     const text = input.trim();
-    if (!text) return;
-
-    const myMsg: Message = { id: Date.now(), from: "me", text, time: now() };
-    setMessages((prev) => [...prev, myMsg]);
+    if (!text || !socket) return;
+    socket.emit("send_message", { room, sender: currentUser, text });
     setInput("");
-    setTyping(true);
-
-    setTimeout(() => {
-      setTyping(false);
-      const reply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
-      setMessages((prev) => [
-        ...prev,
-        { id: Date.now() + 1, from: "them", text: reply, time: now() },
-      ]);
-    }, 1200 + Math.random() * 800);
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -72,7 +75,6 @@ const ChatWidget = ({ ownerName, itemTitle, onClose }: ChatWidgetProps) => {
       initial={{ opacity: 0, y: 40, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 40, scale: 0.95 }}
-      transition={{ duration: 0.2 }}
       className="fixed bottom-6 right-6 z-50 w-80 rounded-2xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden"
       style={{ height: 420 }}
     >
@@ -83,7 +85,10 @@ const ChatWidget = ({ ownerName, itemTitle, onClose }: ChatWidgetProps) => {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-white truncate">{ownerName}</p>
-          <p className="text-xs text-white/70 truncate">{itemTitle}</p>
+          <div className="flex items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-green-300" : "bg-gray-300"}`} />
+            <p className="text-xs text-white/70">{connected ? "Online" : "Connecting..."}</p>
+          </div>
         </div>
         <button onClick={onClose} className="rounded-full p-1 hover:bg-white/20 transition-colors">
           <X className="h-4 w-4 text-white" />
@@ -92,30 +97,33 @@ const ChatWidget = ({ ownerName, itemTitle, onClose }: ChatWidgetProps) => {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.from === "me" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                m.from === "me"
-                  ? "bg-primary text-primary-foreground rounded-br-sm"
-                  : "bg-muted text-foreground rounded-bl-sm"
-              }`}
-            >
-              <p>{m.text}</p>
-              <p className={`mt-0.5 text-xs ${m.from === "me" ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
-                {m.time}
-              </p>
+        {messages.length === 0 && (
+          <p className="text-center text-xs text-muted-foreground mt-8">
+            Start a conversation about "{itemTitle}"
+          </p>
+        )}
+        {messages.map((m, i) => {
+          const isMe = m.sender === currentUser;
+          return (
+            <div key={m._id ?? i} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                isMe ? "bg-primary text-primary-foreground rounded-br-sm"
+                     : "bg-muted text-foreground rounded-bl-sm"
+              }`}>
+                <p>{m.text}</p>
+                <p className={`mt-0.5 text-xs ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
+                  {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
-
+          );
+        })}
         {typing && (
           <div className="flex justify-start">
             <div className="rounded-2xl rounded-bl-sm bg-muted px-4 py-3">
               <div className="flex gap-1">
                 {[0, 1, 2].map((i) => (
-                  <motion.span
-                    key={i}
+                  <motion.span key={i}
                     animate={{ y: [0, -4, 0] }}
                     transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.15 }}
                     className="block h-1.5 w-1.5 rounded-full bg-muted-foreground"
@@ -140,7 +148,7 @@ const ChatWidget = ({ ownerName, itemTitle, onClose }: ChatWidgetProps) => {
         />
         <button
           onClick={send}
-          disabled={!input.trim()}
+          disabled={!input.trim() || !connected}
           className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground transition hover:opacity-90 disabled:opacity-40"
         >
           <Send className="h-4 w-4" />

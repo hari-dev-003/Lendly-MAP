@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   Package, Calendar, Clock, CheckCircle, XCircle, AlertTriangle,
-  ChevronRight, ArrowLeft
+  ChevronRight, ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -29,12 +29,12 @@ interface Booking {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  pending:   { label: "Pending",   color: "bg-yellow-100 text-yellow-700",  icon: Clock },
-  confirmed: { label: "Confirmed", color: "bg-blue-100 text-blue-700",      icon: CheckCircle },
-  active:    { label: "Active",    color: "bg-green-100 text-green-700",    icon: Package },
-  completed: { label: "Completed", color: "bg-gray-100 text-gray-700",      icon: CheckCircle },
-  cancelled: { label: "Cancelled", color: "bg-red-100 text-red-700",        icon: XCircle },
-  disputed:  { label: "Disputed",  color: "bg-orange-100 text-orange-700",  icon: AlertTriangle },
+  pending: { label: "Pending", color: "bg-yellow-100 text-yellow-700", icon: Clock },
+  confirmed: { label: "Confirmed", color: "bg-blue-100 text-blue-700", icon: CheckCircle },
+  active: { label: "Active", color: "bg-green-100 text-green-700", icon: Package },
+  completed: { label: "Completed", color: "bg-gray-100 text-gray-700", icon: CheckCircle },
+  cancelled: { label: "Cancelled", color: "bg-red-100 text-red-700", icon: XCircle },
+  disputed: { label: "Disputed", color: "bg-orange-100 text-orange-700", icon: AlertTriangle },
 };
 
 const MyBookings = () => {
@@ -48,8 +48,12 @@ const MyBookings = () => {
   const currentUser = raw ? JSON.parse(raw)?.user?.username : null;
 
   useEffect(() => {
-    if (!currentUser) { navigate("/login"); return; }
-    axios.get(`http://localhost:3000/api/bookings/user/${currentUser}`)
+    if (!currentUser) {
+      navigate("/login");
+      return;
+    }
+    axios
+      .get(`http://localhost:3000/api/bookings/user/${currentUser}`)
       .then((res) => setBookings(res.data.bookings))
       .catch(() => toast.error("Failed to load bookings"))
       .finally(() => setLoading(false));
@@ -64,7 +68,7 @@ const MyBookings = () => {
   const handleCancel = async (id: string) => {
     try {
       await axios.patch(`http://localhost:3000/api/bookings/${id}/status`, { status: "cancelled" });
-      setBookings((prev) => prev.map((b) => b._id === id ? { ...b, status: "cancelled" } : b));
+      setBookings((prev) => prev.map((b) => (b._id === id ? { ...b, status: "cancelled" } : b)));
       toast.success("Booking cancelled");
     } catch {
       toast.error("Failed to cancel booking");
@@ -74,7 +78,7 @@ const MyBookings = () => {
   const handleConfirm = async (id: string) => {
     try {
       await axios.patch(`http://localhost:3000/api/bookings/${id}/status`, { status: "confirmed" });
-      setBookings((prev) => prev.map((b) => b._id === id ? { ...b, status: "confirmed" } : b));
+      setBookings((prev) => prev.map((b) => (b._id === id ? { ...b, status: "confirmed" } : b)));
       toast.success("Booking confirmed!");
     } catch {
       toast.error("Failed to confirm booking");
@@ -103,14 +107,17 @@ const MyBookings = () => {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="font-heading text-2xl font-bold">My Bookings</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">{bookings.length} total booking{bookings.length !== 1 ? "s" : ""}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {bookings.length} total booking{bookings.length !== 1 ? "s" : ""}
+            </p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/list"><ArrowLeft className="mr-1 h-3.5 w-3.5" /> Browse</Link>
+            <Link to="/list">
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Browse
+            </Link>
           </Button>
         </div>
 
-        {/* Filter Tabs */}
         <div className="mb-6 flex gap-2 rounded-xl bg-muted p-1 w-fit">
           {(["all", "renting", "lending"] as const).map((f) => (
             <button
@@ -142,10 +149,13 @@ const MyBookings = () => {
               const cfg = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending;
               const Icon = cfg.icon;
               const isRenter = booking.renter === currentUser;
+
               const canReview = booking.status === "completed";
               const canCancel = ["pending", "confirmed"].includes(booking.status) && isRenter;
               const canConfirm = booking.status === "pending" && !isRenter;
-              const canHandover = ["confirmed", "active"].includes(booking.status);
+              const canOwnerHandover = !isRenter && booking.status === "confirmed";
+              const canRenterReturn = isRenter && booking.status === "active";
+              const canEvidenceReview = ["completed", "disputed"].includes(booking.status);
 
               return (
                 <motion.div
@@ -156,7 +166,6 @@ const MyBookings = () => {
                   className="rounded-xl border border-border bg-card overflow-hidden shadow-sm"
                 >
                   <div className="flex gap-4 p-4">
-                    {/* Image */}
                     <div className="h-20 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-muted">
                       {booking.itemImage ? (
                         <img src={booking.itemImage} alt={booking.itemTitle} className="h-full w-full object-cover" />
@@ -167,7 +176,6 @@ const MyBookings = () => {
                       )}
                     </div>
 
-                    {/* Details */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-1">
                         <h3 className="font-semibold text-sm leading-tight line-clamp-1">{booking.itemTitle}</h3>
@@ -177,40 +185,49 @@ const MyBookings = () => {
                         </span>
                       </div>
 
-                      <p className="text-xs text-muted-foreground mb-1">
-                        {isRenter ? `Owner: ${booking.owner}` : `Renter: ${booking.renter}`}
-                      </p>
+                      <p className="text-xs text-muted-foreground mb-1">{isRenter ? `Owner: ${booking.owner}` : `Renter: ${booking.renter}`}</p>
 
                       <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
                         <Calendar className="h-3 w-3 flex-shrink-0" />
-                        {new Date(booking.startDate).toLocaleDateString()} → {new Date(booking.endDate).toLocaleDateString()}
+                        {new Date(booking.startDate).toLocaleDateString()} {"->"} {new Date(booking.endDate).toLocaleDateString()}
                         <span className="ml-1">({booking.totalDays} day{booking.totalDays !== 1 ? "s" : ""})</span>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-primary">₹{booking.totalPrice}</span>
+                        <span className="text-sm font-bold text-primary">INR {booking.totalPrice}</span>
                         <div className="flex gap-2">
                           {canCancel && (
-                            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-                              onClick={() => handleCancel(booking._id)}>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                              onClick={() => handleCancel(booking._id)}
+                            >
                               Cancel
                             </Button>
                           )}
                           {canConfirm && (
-                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={() => handleConfirm(booking._id)}>
+                            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => handleConfirm(booking._id)}>
                               Accept
                             </Button>
                           )}
-                          {canHandover && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
-                              onClick={() => navigate(`/handover/${booking._id}`)}>
+                          {canOwnerHandover && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => navigate(`/handover/${booking._id}`)}>
                               Handover <ChevronRight className="h-3 w-3" />
                             </Button>
                           )}
+                          {canRenterReturn && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => navigate(`/handover/${booking._id}`)}>
+                              Return <ChevronRight className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {canEvidenceReview && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => navigate(`/handover/${booking._id}`)}>
+                              Review Evidence <ChevronRight className="h-3 w-3" />
+                            </Button>
+                          )}
                           {canReview && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs"
-                              onClick={() => setReviewTarget(booking)}>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setReviewTarget(booking)}>
                               Review
                             </Button>
                           )}
@@ -227,7 +244,6 @@ const MyBookings = () => {
 
       <Footer />
 
-      {/* Review Modal */}
       {reviewTarget && currentUser && (
         <ReviewModal
           bookingId={reviewTarget._id}
