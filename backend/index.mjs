@@ -10,8 +10,8 @@ import { getusers } from './controllers/users.mjs';
 import { uploadImage } from './controllers/photoupload.mjs';
 import upload from './middleware/upload.mjs';
 import { getProducts, getProductById } from './controllers/productfetch.mjs';
-import { createBooking, getBookingsByUser, updateBookingStatus, uploadHandoverPhotos, getBookingById } from './controllers/booking.mjs';
-import { createReview, getItemReviews, getUserReviews } from './controllers/review.mjs';
+import { createBooking, getBookingsByUser, getAllBookings, updateBookingStatus, uploadHandoverPhotos, getBookingById } from './controllers/booking.mjs';
+import { createReview, getItemReviews, getUserReviews, getAllReviews } from './controllers/review.mjs';
 import { createOrder, verifyPayment } from './controllers/payment.mjs';
 import { submitKyc, getKycStatus, reviewKyc, getPendingKyc } from './controllers/kyc.mjs';
 import { getMessages } from './controllers/message.mjs';
@@ -32,7 +32,8 @@ const corsOptions = {
 
 const io = new Server(httpServer, { cors: corsOptions });
 
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(cors(corsOptions));
 
 const PORT = 3000;
@@ -76,6 +77,7 @@ app.get('/api/products/:id', getProductById);
 
 // ── Bookings ──────────────────────────────────────────────────────────────────
 app.post('/api/bookings', createBooking);
+app.get('/api/bookings', getAllBookings);
 app.get('/api/bookings/user/:username', getBookingsByUser);
 app.get('/api/bookings/:id', getBookingById);
 app.patch('/api/bookings/:id/status', updateBookingStatus);
@@ -83,6 +85,7 @@ app.patch('/api/bookings/:id/photos', uploadHandoverPhotos);
 
 // ── Reviews ───────────────────────────────────────────────────────────────────
 app.post('/api/reviews', createReview);
+app.get('/api/reviews', getAllReviews);
 app.get('/api/reviews/item/:itemId', getItemReviews);
 app.get('/api/reviews/user/:username', getUserReviews);
 

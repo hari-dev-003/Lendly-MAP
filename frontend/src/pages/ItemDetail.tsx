@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, MapPin, Calendar, Shield, MessageCircle, Heart,
-  Share2, ChevronLeft, ChevronRight, Package, Clock
+  Share2, ChevronLeft, ChevronRight, Package, Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -34,6 +34,12 @@ interface Review {
   createdAt: string;
 }
 
+const getErrorMessage = (err: any, fallback: string) => {
+  const candidates = [err?.response?.data?.message, err?.response?.data?.error, err?.message];
+  const found = candidates.find((m) => typeof m === "string" && m.trim() && m !== "undefined");
+  return found || fallback;
+};
+
 const ItemDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -53,18 +59,36 @@ const ItemDetail = () => {
 
   useEffect(() => {
     if (!id) return;
-    axios.get(`http://localhost:3000/api/products/${id}`)
+    axios
+      .get(`http://localhost:3000/api/products/${id}`)
       .then((res) => {
         setItem(res.data.product);
         return axios.get(`http://localhost:3000/api/reviews/item/${id}`);
       })
       .then((res) => {
-        setReviews(res.data.reviews);
-        setAvgRating(res.data.avgRating);
+        setReviews(res.data.reviews || []);
+        setAvgRating(Number(res.data.avgRating || 0));
       })
-      .catch(() => toast.error("Failed to load item"))
+      .catch((err) => toast.error(getErrorMessage(err, "Failed to load item")))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const normalizedItem = useMemo(() => {
+    if (!item) return null;
+    const rawItem: any = item;
+    const price = Number(rawItem.price ?? rawItem.pricePerDay ?? rawItem.rent ?? 0);
+    return {
+      ...item,
+      title: item.title || "Untitled Item",
+      image: item.image || "",
+      price: Number.isFinite(price) ? price : 0,
+      period: item.period || "day",
+      location: item.location || "Location unavailable",
+      owner: item.owner || "",
+      category: item.category || "general",
+      description: item.description || "No description added for this listing.",
+    };
+  }, [item]);
 
   const totalDays = (() => {
     if (!startDate || !endDate) return 0;
@@ -72,85 +96,54 @@ const ItemDetail = () => {
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   })();
 
-  const totalPrice = item ? totalDays * item.price : 0;
-
-  const loadRazorpay = (): Promise<boolean> =>
-    new Promise((resolve) => {
-      if ((window as any).Razorpay) { resolve(true); return; }
-      const s = document.createElement("script");
-      s.src = "https://checkout.razorpay.com/v1/checkout.js";
-      s.onload = () => resolve(true);
-      s.onerror = () => resolve(false);
-      document.body.appendChild(s);
-    });
+  const totalPrice = normalizedItem ? totalDays * normalizedItem.price : 0;
 
   const handleBookNow = async () => {
-    if (!currentUser) { navigate("/login"); return; }
-    if (!startDate || !endDate) { toast.error("Please select rental dates"); return; }
-    if (totalDays <= 0) { toast.error("End date must be after start date"); return; }
-    if (item && currentUser === item.owner) { toast.error("You cannot book your own item"); return; }
+    if (!normalizedItem) {
+      toast.error("Item details are not available yet");
+      return;
+    }
+    if (!currentUser) {
+      navigate("/login");
+      return;
+    }
+    if (!startDate || !endDate) {
+      toast.error("Please select rental dates");
+      return;
+    }
+    if (totalDays <= 0) {
+      toast.error("End date must be after start date");
+      return;
+    }
+    if (!normalizedItem.owner) {
+      toast.error("This listing is missing owner details");
+      return;
+    }
+    if (!normalizedItem.price || normalizedItem.price <= 0) {
+      toast.error("This listing has invalid pricing");
+      return;
+    }
+    if (currentUser === normalizedItem.owner) {
+      toast.error("You cannot book your own item");
+      return;
+    }
 
     setBookingLoading(true);
     try {
-      // 1. Create booking (payment_pending)
-      const bookingRes = await axios.post("http://localhost:3000/api/bookings", {
-        itemId: item!._id,
-        itemTitle: item!.title,
-        itemImage: item!.image,
+      await axios.post("http://localhost:3000/api/bookings", {
+        itemId: normalizedItem._id,
+        itemTitle: normalizedItem.title,
+        itemImage: normalizedItem.image,
         renter: currentUser,
-        owner: item!.owner,
+        owner: normalizedItem.owner,
         startDate,
         endDate,
-        pricePerDay: item!.price,
+        pricePerDay: normalizedItem.price,
       });
-      const bookingId = bookingRes.data.booking._id;
-
-      // 2. Create Razorpay order
-      const orderRes = await axios.post("http://localhost:3000/api/payments/create-order", {
-        bookingId,
-        amount: totalPrice,
-      });
-
-      const loaded = await loadRazorpay();
-      if (!loaded) { toast.error("Payment gateway failed to load"); return; }
-
-      // 3. Open Razorpay modal
-      const options = {
-        key: orderRes.data.keyId,
-        amount: orderRes.data.amount,
-        currency: orderRes.data.currency,
-        name: "Lendly",
-        description: `Booking: ${item!.title}`,
-        order_id: orderRes.data.orderId,
-        handler: async (response: any) => {
-          try {
-            // 4. Verify payment
-            await axios.post("http://localhost:3000/api/payments/verify", {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              bookingId,
-            });
-            toast.success("Payment successful! Booking confirmed.");
-            navigate("/my-bookings");
-          } catch {
-            toast.error("Payment verification failed");
-          }
-        },
-        prefill: { name: currentUser },
-        theme: { color: "#2563EB" },
-        modal: {
-          ondismiss: () => {
-            toast.info("Payment cancelled. Your booking is saved as pending.");
-            navigate("/my-bookings");
-          },
-        },
-      };
-
-      const rzp = new (window as any).Razorpay(options);
-      rzp.open();
+      toast.success("Booking request sent successfully!");
+      navigate("/my-bookings");
     } catch (err: any) {
-      toast.error(err.response?.data?.message || "Booking failed");
+      toast.error(getErrorMessage(err, "Booking failed"));
     } finally {
       setBookingLoading(false);
     }
@@ -171,7 +164,7 @@ const ItemDetail = () => {
     );
   }
 
-  if (!item) {
+  if (!normalizedItem) {
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <Navbar />
@@ -179,7 +172,9 @@ const ItemDetail = () => {
           <div className="text-center">
             <Package className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
             <h2 className="mb-2 font-heading text-2xl font-bold">Item Not Found</h2>
-            <Link to="/list" className="text-primary hover:underline">Back to Browse</Link>
+            <Link to="/list" className="text-primary hover:underline">
+              Back to Browse
+            </Link>
           </div>
         </div>
         <Footer />
@@ -187,7 +182,7 @@ const ItemDetail = () => {
     );
   }
 
-  const images = [item.image, item.image];
+  const images = [normalizedItem.image, normalizedItem.image];
   const today = new Date().toISOString().split("T")[0];
 
   return (
@@ -200,23 +195,21 @@ const ItemDetail = () => {
         </Link>
 
         <div className="grid gap-8 lg:grid-cols-5">
-          {/* Image Carousel */}
           <div className="lg:col-span-3">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted"
-            >
-              <img src={images[imgIndex]} alt={item.title} className="h-full w-full object-cover" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted">
+              <img src={images[imgIndex]} alt={normalizedItem.title} className="h-full w-full object-cover" />
               <span className="absolute left-4 top-4 rounded-full bg-card/80 px-3 py-1 text-xs font-medium backdrop-blur-sm capitalize">
-                {item.category}
+                {normalizedItem.category}
               </span>
               <div className="absolute right-4 top-4 flex gap-2">
                 <button className="flex h-9 w-9 items-center justify-center rounded-full bg-card/80 backdrop-blur-sm transition hover:bg-card">
                   <Heart className="h-4 w-4 text-muted-foreground" />
                 </button>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Link copied!"); }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    toast.success("Link copied!");
+                  }}
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-card/80 backdrop-blur-sm transition hover:bg-card"
                 >
                   <Share2 className="h-4 w-4 text-muted-foreground" />
@@ -234,29 +227,16 @@ const ItemDetail = () => {
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
-              <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-1.5">
-                {images.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setImgIndex(i)}
-                    className={`h-2 w-2 rounded-full transition ${i === imgIndex ? "bg-white" : "bg-white/40"}`}
-                  />
-                ))}
-              </div>
             </motion.div>
 
-            {/* Description */}
             <div className="mt-6 rounded-xl border border-border bg-card p-5">
               <h2 className="mb-2 font-heading text-lg font-semibold">About this item</h2>
-              <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">{normalizedItem.description}</p>
             </div>
 
-            {/* Reviews */}
             <div className="mt-6 rounded-xl border border-border bg-card p-5">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-heading text-lg font-semibold">
-                  Reviews ({reviews.length})
-                </h2>
+                <h2 className="font-heading text-lg font-semibold">Reviews ({reviews.length})</h2>
                 {avgRating > 0 && (
                   <div className="flex items-center gap-1.5">
                     <RatingStars rating={avgRating} size={16} />
@@ -272,13 +252,11 @@ const ItemDetail = () => {
                     <div key={r._id} className="border-t border-border pt-4 first:border-0 first:pt-0">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                          {r.reviewer.charAt(0).toUpperCase()}
+                          {r.reviewer?.charAt(0)?.toUpperCase() || "U"}
                         </div>
-                        <span className="text-sm font-semibold">{r.reviewer}</span>
+                        <span className="text-sm font-semibold">{r.reviewer || "Unknown"}</span>
                         <RatingStars rating={r.rating} size={12} />
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {new Date(r.createdAt).toLocaleDateString()}
-                        </span>
+                        <span className="ml-auto text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}</span>
                       </div>
                       {r.comment && <p className="text-sm text-muted-foreground pl-9">{r.comment}</p>}
                     </div>
@@ -288,57 +266,53 @@ const ItemDetail = () => {
             </div>
           </div>
 
-          {/* Sidebar */}
           <div className="lg:col-span-2">
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground capitalize">
-                  {item.category}
-                </span>
+                <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground capitalize">{normalizedItem.category}</span>
               </div>
 
-              <h1 className="mb-2 font-heading text-2xl font-bold md:text-3xl">{item.title}</h1>
+              <h1 className="mb-2 font-heading text-2xl font-bold md:text-3xl">{normalizedItem.title}</h1>
 
               <div className="mb-4 flex items-center gap-4 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" /> {item.location}
+                  <MapPin className="h-4 w-4" /> {normalizedItem.location}
                 </span>
                 {avgRating > 0 && (
                   <span className="flex items-center gap-1.5">
                     <RatingStars rating={avgRating} size={14} />
-                    <span>{avgRating} ({reviews.length})</span>
+                    <span>
+                      {avgRating} ({reviews.length})
+                    </span>
                   </span>
                 )}
               </div>
 
-              {/* Booking Card */}
               <div className="mb-6 rounded-xl border border-border bg-card p-6 shadow-sm">
                 <div className="mb-4">
-                  <span className="font-heading text-3xl font-bold text-primary">₹{item.price}</span>
-                  <span className="text-muted-foreground">/{item.period}</span>
+                  <span className="font-heading text-3xl font-bold text-primary">₹{normalizedItem.price}</span>
+                  <span className="text-muted-foreground">/{normalizedItem.period}</span>
                 </div>
 
-                {/* Date Pickers */}
                 <div className="mb-4 space-y-3">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Start Date
-                    </label>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">Start Date</label>
                     <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                       <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <input
                         type="date"
                         min={today}
                         value={startDate}
-                        onChange={(e) => { setStartDate(e.target.value); if (endDate && e.target.value >= endDate) setEndDate(""); }}
+                        onChange={(e) => {
+                          setStartDate(e.target.value);
+                          if (endDate && e.target.value >= endDate) setEndDate("");
+                        }}
                         className="flex-1 bg-transparent text-sm outline-none"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      End Date
-                    </label>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground uppercase tracking-wide">End Date</label>
                     <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                       <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <input
@@ -352,11 +326,12 @@ const ItemDetail = () => {
                   </div>
                 </div>
 
-                {/* Price Breakdown */}
                 {totalDays > 0 && (
                   <div className="mb-4 rounded-lg bg-muted/50 p-3 space-y-1.5 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">₹{item.price} × {totalDays} day{totalDays !== 1 ? "s" : ""}</span>
+                      <span className="text-muted-foreground">
+                        ₹{normalizedItem.price} × {totalDays} day{totalDays !== 1 ? "s" : ""}
+                      </span>
                       <span>₹{totalPrice}</span>
                     </div>
                     <div className="flex justify-between font-semibold border-t border-border pt-1.5 mt-1.5">
@@ -366,18 +341,12 @@ const ItemDetail = () => {
                   </div>
                 )}
 
-                {/* Escrow badge */}
                 <div className="mb-3 flex items-center gap-2 rounded-lg border border-trust/20 bg-trust/5 px-3 py-2 text-xs text-trust">
                   <Shield className="h-3.5 w-3.5 flex-shrink-0" />
-                  Escrow-protected · funds released after return
+                  No online payment required. Owner confirmation needed.
                 </div>
 
-                <Button
-                  className="mb-3 w-full gap-2"
-                  size="lg"
-                  onClick={handleBookNow}
-                  disabled={bookingLoading}
-                >
+                <Button className="mb-3 w-full gap-2" size="lg" onClick={handleBookNow} disabled={bookingLoading}>
                   <Calendar className="h-4 w-4" />
                   {bookingLoading ? "Booking..." : "Book Now"}
                 </Button>
@@ -387,7 +356,10 @@ const ItemDetail = () => {
                   className="w-full gap-2"
                   size="lg"
                   onClick={() => {
-                    if (!currentUser) { navigate("/login"); return; }
+                    if (!currentUser) {
+                      navigate("/login");
+                      return;
+                    }
                     setChatOpen(true);
                   }}
                 >
@@ -396,17 +368,14 @@ const ItemDetail = () => {
                 </Button>
               </div>
 
-              {/* Owner Card */}
               <div className="rounded-xl border border-border bg-card p-4">
                 <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Listed by</p>
                 <div className="mb-3 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <span className="font-heading text-sm font-bold text-primary">
-                      {item.owner.charAt(0).toUpperCase()}
-                    </span>
+                    <span className="font-heading text-sm font-bold text-primary">{(normalizedItem.owner || "?").charAt(0).toUpperCase()}</span>
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">{item.owner}</p>
+                    <p className="text-sm font-semibold">{normalizedItem.owner || "Unknown owner"}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <TrustBadge level="verified" />
                     </div>
@@ -418,15 +387,14 @@ const ItemDetail = () => {
                 </div>
               </div>
 
-              {/* Transaction Timeline */}
               <div className="mt-4 rounded-xl border border-border bg-card p-4">
                 <h3 className="mb-3 text-sm font-semibold">How it works</h3>
                 <div className="space-y-3">
                   {[
-                    { icon: Calendar, label: "Book & pay into escrow" },
+                    { icon: Calendar, label: "Send booking request" },
                     { icon: Package, label: "Pick up with pre-handover photos" },
                     { icon: Clock, label: "Enjoy your rental" },
-                    { icon: Shield, label: "Return & funds released" },
+                    { icon: Shield, label: "Return and close booking" },
                   ].map(({ icon: Icon, label }, i) => (
                     <div key={i} className="flex items-center gap-3 text-xs text-muted-foreground">
                       <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 flex-shrink-0">
@@ -445,13 +413,12 @@ const ItemDetail = () => {
 
       <Footer />
 
-      {/* Chat Widget */}
       {chatOpen && (
         <ChatWidget
-          ownerName={item.owner}
+          ownerName={normalizedItem.owner || "Unknown"}
           currentUser={currentUser ?? ""}
-          itemId={item._id}
-          itemTitle={item.title}
+          itemId={normalizedItem._id}
+          itemTitle={normalizedItem.title}
           onClose={() => setChatOpen(false)}
         />
       )}

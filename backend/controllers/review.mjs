@@ -46,4 +46,16 @@ const getUserReviews = async (req, res) => {
     }
 };
 
-export { createReview, getItemReviews, getUserReviews };
+const getAllReviews = async (_req, res) => {
+    try {
+        const reviews = await Review.find().sort({ createdAt: -1 });
+        const avgRating = reviews.length
+            ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+            : 0;
+        res.status(200).send({ reviews, avgRating: Math.round(avgRating * 10) / 10, total: reviews.length });
+    } catch (err) {
+        res.status(500).send({ message: 'Internal Server Error', error: err.message });
+    }
+};
+
+export { createReview, getItemReviews, getUserReviews, getAllReviews };

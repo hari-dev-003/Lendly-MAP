@@ -48,6 +48,16 @@ const getBookingsByUser = async (req, res) => {
     }
 };
 
+const getAllBookings = async (_req, res) => {
+    try {
+        const bookings = await Booking.find().sort({ createdAt: -1 });
+        res.status(200).send({ bookings });
+    } catch (err) {
+        console.log(err.message);
+        res.status(500).send({ message: 'Internal Server Error', error: err.message });
+    }
+};
+
 const updateBookingStatus = async (req, res) => {
     try {
         const { id } = req.params;
@@ -61,7 +71,7 @@ const updateBookingStatus = async (req, res) => {
         const update = { status };
         if (status === 'disputed' && disputeReason) update.disputeReason = disputeReason;
 
-        const booking = await Booking.findByIdAndUpdate(id, update, { new: true });
+        const booking = await Booking.findByIdAndUpdate(id, update, { returnDocument: 'after' });
         if (!booking) return res.status(404).send({ message: 'Booking not found' });
 
         res.status(200).send({ message: 'Booking status updated', booking });
@@ -74,17 +84,37 @@ const updateBookingStatus = async (req, res) => {
 const uploadHandoverPhotos = async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, photos } = req.body; // type: "pre" | "post"
+        const { type, photos, qualityScore, recordedAt, performedBy } = req.body; // type: "pre" | "post"
 
         if (!['pre', 'post'].includes(type)) {
             return res.status(400).send({ message: 'type must be "pre" or "post"' });
         }
 
-        const field = type === 'pre' ? 'preHandoverPhotos' : 'postHandoverPhotos';
+        const safePhotos = Array.isArray(photos) ? photos : [];
+        const score = Number(qualityScore);
+        const safeScore = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+        const at = recordedAt ? new Date(recordedAt) : new Date();
+        const safeAt = Number.isNaN(at.getTime()) ? new Date() : at;
+
+        const update =
+            type === 'pre'
+                ? {
+                    preHandoverPhotos: safePhotos,
+                    preHandoverQualityScore: safeScore,
+                    preHandoverAt: safeAt,
+                    preHandoverBy: performedBy || '',
+                }
+                : {
+                    postHandoverPhotos: safePhotos,
+                    postHandoverQualityScore: safeScore,
+                    postHandoverAt: safeAt,
+                    postHandoverBy: performedBy || '',
+                };
+
         const booking = await Booking.findByIdAndUpdate(
             id,
-            { [field]: photos },
-            { new: true }
+            update,
+            { returnDocument: 'after' }
         );
 
         if (!booking) return res.status(404).send({ message: 'Booking not found' });
@@ -106,4 +136,4 @@ const getBookingById = async (req, res) => {
     }
 };
 
-export { createBooking, getBookingsByUser, updateBookingStatus, uploadHandoverPhotos, getBookingById };
+export { createBooking, getBookingsByUser, getAllBookings, updateBookingStatus, uploadHandoverPhotos, getBookingById };

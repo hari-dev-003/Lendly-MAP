@@ -21,7 +21,13 @@ const bookingSchema = new mongoose.Schema({
         default: 'pending'
     },
     preHandoverPhotos: [{ type: String }],
+    preHandoverQualityScore: { type: Number, default: null },
+    preHandoverAt: { type: Date, default: null },
+    preHandoverBy: { type: String, default: '' },
     postHandoverPhotos: [{ type: String }],
+    postHandoverQualityScore: { type: Number, default: null },
+    postHandoverAt: { type: Date, default: null },
+    postHandoverBy: { type: String, default: '' },
     disputeReason: { type: String, default: '' },
     paymentId:    { type: String, default: '' },
     orderId:      { type: String, default: '' },

@@ -225,14 +225,14 @@ export default function Add() {
               <select name="category" value={formData.category} onChange={handleChange} required
                 className="w-full border px-4 py-2 rounded">
                 <option value="">Select Category</option>
-                <option value="cameras">Cameras</option>
                 <option value="electronics">Electronics</option>
                 <option value="tools">Tools</option>
-                <option value="bikes">Bikes</option>
                 <option value="outdoor">Outdoor</option>
-                <option value="party">Party</option>
-                <option value="gaming">Gaming</option>
                 <option value="music">Music</option>
+                <option value="kitchen">Kitchen</option>
+                <option value="other">Other</option>
+
+
               </select>
               <select name="condition" value={formData.condition} onChange={handleChange}
                 className="w-full border px-4 py-2 rounded">

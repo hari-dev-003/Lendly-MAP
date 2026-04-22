@@ -16,7 +16,7 @@ export const submitKyc = async (req, res) => {
             update.kycDocBack = back.secure_url;
         }
 
-        const user = await Signup.findOneAndUpdate({ username }, update, { new: true });
+        const user = await Signup.findOneAndUpdate({ username }, update, { returnDocument: 'after' });
         if (!user) return res.status(404).send({ message: 'User not found' });
 
         res.status(200).send({ message: 'KYC submitted for review', kycStatus: user.kycStatus });
@@ -40,7 +40,7 @@ export const reviewKyc = async (req, res) => {
     try {
         const { username, action } = req.body; // action: 'approve' | 'reject'
         const kycStatus = action === 'approve' ? 'approved' : 'rejected';
-        const user = await Signup.findOneAndUpdate({ username }, { kycStatus }, { new: true });
+        const user = await Signup.findOneAndUpdate({ username }, { kycStatus }, { returnDocument: 'after' });
         if (!user) return res.status(404).send({ message: 'User not found' });
         res.status(200).send({ message: `KYC ${kycStatus}`, kycStatus });
     } catch (err) {

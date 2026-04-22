@@ -52,11 +52,10 @@ const ItemCard = ({ item }: { item: ItemData }) => {
         {/* Content */}
         <div className="p-4">
           <div className="mb-1 flex items-center justify-between">
-            <h3 className="font-heading text-sm font-semibold text-foreground line-clamp-1">{item.title}</h3>
+            <h1 className="font-heading text-ls font-semibold text-foreground line-clamp-1">{item.title}</h1>
           </div>
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="h-3 w-3" />
-            {item.location}
+            <span className="font-bold">Location : </span>{item.location}
           </div>
           <div className="mb-3 flex items-center gap-2">
             {/* <RatingStars rating={item.rating} size={12} /> */}
@@ -65,9 +64,11 @@ const ItemCard = ({ item }: { item: ItemData }) => {
           <div className="flex items-center justify-between">
             <div>
               <span className="font-heading text-lg font-bold text-primary">₹{item.price}</span>
-              <span className="text-xs text-muted-foreground ">/{item.period}</span>
-              <span className="text-xs text-muted-foreground">Owner: {item.owner}</span>
-              <span className="text-xs text-muted-foreground">{item.description}</span>
+              <span className="text-xs text-muted-foreground font-bold"> / {item.period}</span>
+              <br />
+              <span className="text-xs text-muted-foreground"><span className="font-bold">Owner: </span>{item.owner}</span>
+              <br />
+              <span className="text-xs text-muted-foreground"><span className="font-bold">Description : </span>{item.description}</span>
             </div>
             {item.ownerBadge && <TrustBadge level={item.ownerBadge} />}
           </div>
